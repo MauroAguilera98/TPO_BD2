@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+motor
+neo4j
+cassandra-driver
+python-dotenv

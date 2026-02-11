@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: edugrade_api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+      - neo4j
+      - cassandra
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
+      - CASSANDRA_HOST=cassandra
+
+  mongo:
+    image: mongo:7
+    container_name: edugrade_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  neo4j:
+    image: neo4j:5
+    container_name: edugrade_neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/password
+    volumes:
+      - neo4j_data:/data
+
+  cassandra:
+    image: cassandra:4
+    container_name: edugrade_cassandra
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+
+volumes:
+  mongo_data:
+  neo4j_data:
+  cassandra_data:
