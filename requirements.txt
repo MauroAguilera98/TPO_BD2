@@ -1,6 +1,7 @@
 fastapi
-uvicorn[standard]
-motor
+uvicorn
+pymongo
 neo4j
 cassandra-driver
-python-dotenv
+redis
+pydantic

@@ -1,7 +1,7 @@
-import os
 from cassandra.cluster import Cluster
 
-CASSANDRA_HOST = os.getenv("CASSANDRA_HOST", "localhost")
+cluster = Cluster(["cassandra"])
+session = cluster.connect("edugrade")
 
-cluster = Cluster([CASSANDRA_HOST])
-session = cluster.connect()
+# si seteás keyspace:
+# session.set_keyspace("edugrade")

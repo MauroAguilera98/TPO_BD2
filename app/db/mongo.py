@@ -1,7 +1,6 @@
-import os
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import MongoClient
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-
-client = AsyncIOMotorClient(MONGO_URI)
+client = MongoClient("mongodb://mongo:27017")
 db = client["edugrade"]
+grades_collection = db["grades"]
+
