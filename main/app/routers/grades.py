@@ -5,26 +5,29 @@ from datetime import datetime
 import hashlib
 import json
 
-from db.mongo import grades_collection
-from db.cassandra import session
+from app.db.mongo import grades_collection
+from app.db.cassandra import session
 
 router = APIRouter()
+
+class OriginalGrade(BaseModel):
+    scale: str
+    value: float | int | str
 
 class Grade(BaseModel):
     student_id: str
     country: str
     institution: str
     subject: str
-    original_grade: Dict[str, Any]
+    original_grade: OriginalGrade
     metadata: Dict[str, Any]
 
 @router.post("/grades")
 def register_grade(grade: Grade):
-
     grade_data = grade.model_dump()
 
     hash_value = hashlib.sha256(
-        json.dumps(grade_data).encode()
+        json.dumps(grade_data, sort_keys=True, default=str).encode()
     ).hexdigest()
 
     grade_data["immutable_hash"] = hash_value
@@ -32,6 +35,7 @@ def register_grade(grade: Grade):
 
     grades_collection.insert_one(grade_data)
 
+    # Requiere que exista la tabla audit_log en Cassandra
     session.execute("""
         INSERT INTO audit_log (student_id, event_time, action, hash)
         VALUES (%s, toTimestamp(now()), %s, %s)
