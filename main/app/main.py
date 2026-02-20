@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routers import grades, trajectory, reports, conversion
+from app.routers import grades, trajectory, reports, conversion
 
 app = FastAPI(title="EduGrade Global API")
 

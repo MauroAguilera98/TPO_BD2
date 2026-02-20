@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-pymongo
-neo4j
-cassandra-driver
-redis
-pydantic

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from db.cassandra import session
+from app.db.cassandra import session
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -60,3 +60,21 @@ def top_10_students(country: str, year: int):
     }
 # Distribución de calificaciones por país y año
 @router.get("/distribution/{country}/{year}")
+def grade_distribution(country: str, year: int):
+
+    rows = session.execute("""
+        SELECT grade FROM grades_by_country_year
+        WHERE country=%s AND year=%s
+    """, (country, year))
+
+    distribution = {}
+
+    for row in rows:
+        grade = row.grade
+        distribution[grade] = distribution.get(grade, 0) + 1
+
+    return {
+        "country": country,
+        "year": year,
+        "distribution": distribution
+    }

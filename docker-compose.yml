@@ -1,12 +1,11 @@
+version: '3.9'
+
 services:
   mongo:
     image: mongo:7
     container_name: edugrade_mongo
     ports:
       - "27017:27017"
-    environment:
-    - MONGO_URI=mongodb://mongo:27017
-
     volumes:
       - mongo_data:/data/db
 
@@ -45,6 +44,11 @@ services:
       - neo4j
       - cassandra
       - redis
+    environment:
+      - MONGO_HOST=mongo
+      - CASSANDRA_HOST=cassandra
+      - REDIS_HOST=redis
+      - NEO4J_HOST=neo4j
     restart: always
 
 volumes:
