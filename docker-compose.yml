@@ -1,10 +1,9 @@
 version: '3.9'
 
 services:
-
   mongo:
     image: mongo:7
-    container_name: mongo
+    container_name: edugrade_mongo
     ports:
       - "27017:27017"
     volumes:
@@ -12,7 +11,7 @@ services:
 
   neo4j:
     image: neo4j:5
-    container_name: neo4j
+    container_name: edugrade_neo4j
     ports:
       - "7474:7474"
       - "7687:7687"
@@ -23,7 +22,7 @@ services:
 
   cassandra:
     image: cassandra:4
-    container_name: cassandra
+    container_name: edugrade_cassandra
     ports:
       - "9042:9042"
     volumes:
@@ -31,7 +30,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: redis
+    container_name: edugrade_redis
     ports:
       - "6379:6379"
 
@@ -45,6 +44,11 @@ services:
       - neo4j
       - cassandra
       - redis
+    environment:
+      - MONGO_HOST=mongo
+      - CASSANDRA_HOST=cassandra
+      - REDIS_HOST=redis
+      - NEO4J_HOST=neo4j
     restart: always
 
 volumes:

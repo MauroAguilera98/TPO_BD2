@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from db.redis_client import redis_client
+from app.db.redis_client import redis_client
 
 router = APIRouter(prefix="/conversion", tags=["Conversion"])
 

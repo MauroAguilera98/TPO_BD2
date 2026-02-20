@@ -1,6 +1,12 @@
 from cassandra.cluster import Cluster
+import os
+# cluster = Cluster(["127.0.0.1"])
+ 
 
-cluster = Cluster(["127.0.0.1"])
+CASSANDRA_HOST = os.getenv("CASSANDRA_HOST", "localhost")
+
+cluster = Cluster([CASSANDRA_HOST])
+
 session = cluster.connect()
 
 session.execute("""
