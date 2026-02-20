@@ -1,7 +1,8 @@
-fastapi
-uvicorn
-pymongo
-neo4j
-cassandra-driver
-redis
-pydantic
+fastapi==0.104.1
+uvicorn==0.24.0.post1
+pymongo==4.6.0
+motor==3.3.2
+neo4j==5.14.1
+cassandra-driver==3.29.0
+redis==5.0.1
+pydantic==2.5.2
