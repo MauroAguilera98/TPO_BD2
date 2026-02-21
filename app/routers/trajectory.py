@@ -123,3 +123,16 @@ async def add_equivalence(eq: Equivalence):
 @router.get("/student-path/{student_id}")
 async def get_student_path(student_id: str):
     return await run_in_threadpool(sync_get_student_path, student_id)
+
+#Endpoint para historial académico del estudiante
+@router.get("/student/{student_id}")
+def get_student_trajectory(student_id: str):
+
+    with driver.session() as session:
+
+        result = session.run("""
+        MATCH (s:Student {id:$id})-[:TOOK]->(sub:Subject)
+        RETURN sub.name
+        """, id=student_id)
+
+        return [r["sub.name"] for r in result]

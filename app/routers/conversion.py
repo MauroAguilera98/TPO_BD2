@@ -1,12 +1,15 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from app.db.redis_client import redis_client
+from app.audit.audit_service import AuditService
 
 router = APIRouter(prefix="/conversion", tags=["Conversion"])
 
 # --- MAPEOS ESTÁTICOS ---
 UK_MAP = {"A*": 10.0, "A": 9.0, "B": 8.0, "C": 7.0, "D": 6.0, "E": 5.0, "F": 4.0}
 US_LETTER_MAP = {"A": 4.0, "B": 3.0, "C": 2.0, "D": 1.0, "F": 0.0}
+
+
 
 def to_standard_ar(grade: str, system: str) -> float:
     """Convierte la entrada al pivote AR (0-10) asumiendo GPA para US."""
@@ -46,24 +49,43 @@ def from_standard_ar(val: float, system: str) -> str:
 
 @router.post("/")
 async def convert_grade(grade: str, from_system: str, to_system: str):
+
     cache_key = f"conv:{from_system}:{to_system}:{grade}".upper()
 
-    # 1. Consulta a Redis (No bloqueante)
+    # 1. Redis
     cached = await run_in_threadpool(redis_client.get, cache_key)
+
     if cached:
         return {"converted": cached, "cached": True}
 
-    # 2. Lógica Pivot
+    # 2. Conversión
     try:
         standard_val = to_standard_ar(grade, from_system)
         result = from_standard_ar(standard_val, to_system)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 3. Guardar en Redis
+    # 3. Guardar cache
     await run_in_threadpool(redis_client.setex, cache_key, 3600, str(result))
 
+    # 4. AUDITORÍA
+    conversion_id = str(uuid4())
+
+    AuditService.register_event(
+        entity_type="conversion",
+        entity_id=conversion_id,
+        action="GRADE_CONVERSION",
+        actor="system",
+        payload={
+            "grade": grade,
+            "from": from_system,
+            "to": to_system,
+            "result": result
+        }
+    )
+
     return {
+        "conversion_id": conversion_id,
         "converted": result,
         "from": from_system.upper(),
         "to": to_system.upper(),

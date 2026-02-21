@@ -1,8 +1,12 @@
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 from app.db.cassandra import session
+from app.Services.cache import get_cache, set_cache
+
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
+
+
 
 # 1. Promedio delegando el cálculo matemático a Cassandra
 @router.get("/average/{country}/{year}")
@@ -72,3 +76,31 @@ async def grade_distribution(country: str, year: int):
         "year": year,
         "distribution": distribution
     }
+
+@router.get("/top-subjects")
+def top_subjects():
+
+    rows = session.execute("""
+    SELECT subject, avg_grade
+    FROM subject_averages
+    LIMIT 10
+    """)
+
+    return list(rows)
+
+
+@router.get("/student/{student_id}")
+async def student_report(student_id: str):
+
+    cache_key = f"report:{student_id}"
+    cached = get_cache(cache_key)
+
+    if cached:
+        return {"source": "cache", "data": cached}
+
+    # consulta real (mongo / cassandra)
+    data = {"student_id": student_id, "grades": []}
+
+    set_cache(cache_key, data)
+
+    return {"source": "db", "data": data}

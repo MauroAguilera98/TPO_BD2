@@ -16,14 +16,28 @@ WITH replication = {'class':'SimpleStrategy','replication_factor':1}
 
 session.set_keyspace("edugrade")
 
+# session.execute("""
+# CREATE TABLE IF NOT EXISTS audit_log (
+#     student_id text,
+#     event_time timestamp,
+#     action text,
+#     hash text,
+#     PRIMARY KEY (student_id, event_time)
+# ) WITH CLUSTERING ORDER BY (event_time DESC)
+# """)
+
 session.execute("""
 CREATE TABLE IF NOT EXISTS audit_log (
-    student_id text,
-    event_time timestamp,
+    entity_type text,
+    entity_id text,
+    timestamp timestamp,
     action text,
+    actor text,
+    payload text,
+    previous_hash text,
     hash text,
-    PRIMARY KEY (student_id, event_time)
-) WITH CLUSTERING ORDER BY (event_time DESC)
+    PRIMARY KEY ((entity_type, entity_id), timestamp)
+) WITH CLUSTERING ORDER BY (timestamp DESC)
 """)
 
 session.execute("""
