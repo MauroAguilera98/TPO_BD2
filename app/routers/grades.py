@@ -151,6 +151,23 @@ async def register_grade(grade: Grade):
         }
     )
 
+    await run_in_threadpool(
+    AuditService.register_event,
+    "student",
+    grade.student_id,          # <- entity_id = ID del alumno
+    "GRADE_CREATED",
+    "system",
+    {
+        "grade_id": grade_id,
+        "subject": grade.subject,
+        "value": grade.original_grade.value,
+        "country": grade.country,
+        "institution": grade.institution,
+        "year": int(grade.metadata.get("year", created_at.year)),
+        "term": str(grade.metadata.get("term", "")),
+    }
+)
+
     # -------------------------------------------------
     # RESPUESTA
     # -------------------------------------------------
