@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 from app.db.cassandra import session
-from app.Services.cache import get_cache, set_cache
+from app.services.cache import get_cache, set_cache
 
 
 router = APIRouter(prefix="/reports", tags=["Reports"])

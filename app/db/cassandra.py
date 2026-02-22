@@ -50,3 +50,16 @@ CREATE TABLE IF NOT EXISTS grades_by_country_year (
 )
 """)
 
+    # ---------------------------------------------------------
+    # AUTOMATIZACIÓN QA: Creación de la tabla analítica
+    # ---------------------------------------------------------
+session.execute("""
+    CREATE TABLE IF NOT EXISTS edugrade.grades_by_country_year (
+        country text,
+        year int,
+        student_id text,
+        grade float,
+        PRIMARY KEY ((country, year), student_id)
+    );
+""")
+print("✅ Tabla analítica de Cassandra verificada/creada.")

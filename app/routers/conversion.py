@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from app.db.redis_client import redis_client
 from app.audit.audit_service import AuditService
+from uuid import uuid4
 
 router = APIRouter(prefix="/conversion", tags=["Conversion"])
 

@@ -32,20 +32,19 @@ class Grade(BaseModel):
     original_grade: OriginalGrade
     metadata: Dict[str, Any]
 
-
 # -----------------------------
-# FUNCION SINCRONA PARA NEO4J
+# FUNCION ASÍNCRONA PARA NEO4J
 # -----------------------------
-
-def sync_neo4j_insert(
+async def async_neo4j_insert(
     grade: Grade,
     grade_id: str,
     hash_value: str,
     year: int,
     term: str
 ):
-    with driver.session() as neo:
-        neo.run(
+    # Nota de QA: Usamos 'async with' para liberar el hilo mientras esperamos a la BD
+    async with driver.session() as session:
+        await session.run(
             """
             MERGE (s:Student {id: $student_id})
             MERGE (i:Institution {name: $institution, country: $country})
@@ -103,14 +102,17 @@ async def register_grade(grade: Grade):
     # -------------------------------------------------
     # 2) NEO4J - TRAYECTORIA ACADEMICA
     # -------------------------------------------------
+# -------------------------------------------------
+    # 2) NEO4J - TRAYECTORIA ACADEMICA (Ahora es 100% Async)
+    # -------------------------------------------------
     trajectory_linked = False
 
     try:
         year = int(grade.metadata.get("year", created_at.year))
         term = str(grade.metadata.get("term", ""))
 
-        await run_in_threadpool(
-            sync_neo4j_insert,
+        # ¡Adiós run_in_threadpool! Ahora lo ejecutamos nativamente de forma asíncrona
+        await async_neo4j_insert(
             grade,
             grade_id,
             hash_value,
@@ -150,6 +152,42 @@ async def register_grade(grade: Grade):
             "value": grade.original_grade.value
         }
     )
+    
+    # -------------------------------------------------
+    # 4) CASSANDRA - VISTA ANALÍTICA (Para reports.py)
+    # -------------------------------------------------
+    # Nota de QA: Solo insertamos si el valor es numérico. 
+    # Si es "A*" de UK, habría que usar conversion.py primero.
+    try:
+        numeric_grade = float(grade.original_grade.value)
+        
+        def sync_cassandra_analytics():
+            from app.db.cassandra import session
+            session.execute("""
+                INSERT INTO grades_by_country_year (country, year, student_id, grade)
+                VALUES (%s, %s, %s, %s)
+            """, (grade.country, year, grade.student_id, numeric_grade))
+            
+        await run_in_threadpool(sync_cassandra_analytics)
+    except ValueError:
+        pass # Ignoramos notas con letras puras para el promedio matemático directo
+
+    await run_in_threadpool(
+    AuditService.register_event,
+    "student",
+    grade.student_id,          # <- entity_id = ID del alumno
+    "GRADE_CREATED",
+    "system",
+    {
+        "grade_id": grade_id,
+        "subject": grade.subject,
+        "value": grade.original_grade.value,
+        "country": grade.country,
+        "institution": grade.institution,
+        "year": int(grade.metadata.get("year", created_at.year)),
+        "term": str(grade.metadata.get("term", "")),
+    }
+)
 
     # -------------------------------------------------
     # RESPUESTA
