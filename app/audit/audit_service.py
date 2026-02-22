@@ -5,7 +5,7 @@ from app.audit.hash_chain import generate_hash
 from app.audit.audit_model import AuditEvent
 
 # Importamos los métodos de Redis que tus compañeros ya prepararon
-from app.Services.cache import get_cache, set_cache
+from app.services.cache import get_cache, set_cache
 
 
 class AuditService:

@@ -13,8 +13,5 @@ neo4j==5.17.0
 cassandra-driver==3.29.0
 redis==5.0.1
 pymongo>=4.4.0
-
-# ==========================================
-# TESTING Y SCRIPTS
-# ==========================================
 aiohttp==3.9.3
+email-validator==2.1.0.post1

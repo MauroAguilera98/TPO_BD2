@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import grades, trajectory, reports, conversion, audit
+from app.routers import grades, trajectory, reports, conversion, audit, students
 from app.db.neo4j import init_neo4j_schema 
 
 app = FastAPI(title="EduGrade Global API")
@@ -15,3 +15,4 @@ app.include_router(trajectory.router)
 app.include_router(reports.router)
 app.include_router(conversion.router)
 app.include_router(audit.router)
+app.include_router(students.router)
