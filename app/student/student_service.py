@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
-from fastapi.concurrency import run_in_threadpool
 
 from app.student.student_repository import StudentRepository
 from app.audit.audit_service import AuditService
@@ -80,13 +79,12 @@ class StudentService:
         await StudentRepository.create(doc)
 
         # Auditoría (sync) -> threadpool
-        await run_in_threadpool(
-            AuditService.register_event,
-            "student",
-            student_id,
-            "CREATE",
-            actor,
-            {"snapshot": _serialize(doc)},
+        await AuditService.register_event(
+            entity_type="student",
+            entity_id=student_id,
+            action="CREATE", # (o UPDATE, DELETE, según corresponda en cada método)
+            actor=actor,
+            payload={"snapshot": _serialize(doc)}
         )
 
         return _mongo_to_api_student(doc)
@@ -112,7 +110,7 @@ class StudentService:
         if not updated:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
-        await run_in_threadpool(
+        await AuditService.register_event(
             AuditService.register_event,
             "student",
             student_id,
@@ -140,7 +138,7 @@ class StudentService:
         if not updated:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
-        await run_in_threadpool(
+        await AuditService.register_event(
             AuditService.register_event,
             "student",
             student_id,
@@ -161,7 +159,7 @@ class StudentService:
         if not deleted:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
-        await run_in_threadpool(
+        await AuditService.register_event(
             AuditService.register_event,
             "student",
             student_id,
@@ -191,7 +189,7 @@ class StudentService:
         if not updated:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
-        await run_in_threadpool(
+        await AuditService.register_event(
             AuditService.register_event,
             "student",
             student_id,

@@ -1,7 +1,7 @@
 from neo4j import AsyncGraphDatabase
 import os
 
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://neo4j:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password") 
 
@@ -26,3 +26,8 @@ async def init_neo4j_schema():
                 print(f"⚠️ Nota de Neo4j: {e}")
                 
     print("✅ Índices y Restricciones de Neo4j verificados/creados.")
+    
+    async def close_neo4j_driver():
+        """Cierra el pool de conexiones asíncronas de Neo4j de forma segura."""
+    await driver.close()
+    print("🔌 Conexión a Neo4j cerrada correctamente.")

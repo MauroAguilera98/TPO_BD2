@@ -1,12 +1,9 @@
 from fastapi import APIRouter
-from fastapi.concurrency import run_in_threadpool
+import asyncio
 from app.db.cassandra import session
 from app.services.cache import get_cache, set_cache
 
-
 router = APIRouter(prefix="/reports", tags=["Reports"])
-
-
 
 # 1. Promedio delegando el cálculo matemático a Cassandra
 @router.get("/average/{country}/{year}")
@@ -17,7 +14,9 @@ async def get_country_average(country: str, year: int):
         FROM grades_by_country_year 
         WHERE country=%s AND year=%s
     """
-    row = await run_in_threadpool(lambda: session.execute(query, (country, year)).one())
+    # Delegamos al hilo nativo de asyncio
+    result = await asyncio.to_thread(session.execute, query, (country, year))
+    row = result.one()
 
     if not row or row.total == 0:
         return {"country": country, "year": year, "average": None}
@@ -29,7 +28,7 @@ async def get_country_average(country: str, year: int):
         "total_records": row.total
     }
 
-# 2. Top 10 agrupando nativamente (Si Cassandra > 3.0)
+# 2. Top 10 agrupando nativamente
 @router.get("/top10/{country}/{year}")
 async def top_10_students(country: str, year: int):
     # Agrupamos por student_id dentro de la partición. 
@@ -40,10 +39,10 @@ async def top_10_students(country: str, year: int):
         WHERE country=%s AND year=%s 
         GROUP BY student_id
     """
-    # Ejecutamos en threadpool y convertimos a lista
-    rows = await run_in_threadpool(lambda: list(session.execute(query, (country, year))))
+    result = await asyncio.to_thread(session.execute, query, (country, year))
+    rows = list(result)
 
-    # Cassandra no ordena por agregaciones, ordenamos en Python (ahora sí es seguro porque hay poca data)
+    # Cassandra no ordena por agregaciones, ordenamos en Python
     top10 = sorted(rows, key=lambda x: x.student_avg, reverse=True)[:10]
 
     return {
@@ -63,12 +62,10 @@ async def grade_distribution(country: str, year: int):
         FROM grades_by_country_year 
         WHERE country=%s AND year=%s
     """
-    # Nota de Arquitectura: Si el volumen es extremo, en producción usaríamos Spark o 
-    # re-modelaríamos la tabla. Para este proyecto, iteramos en background.
-    rows = await run_in_threadpool(lambda: session.execute(query, (country, year)))
+    result = await asyncio.to_thread(session.execute, query, (country, year))
 
     distribution = {}
-    for row in rows:
+    for row in result:
         distribution[row.grade] = distribution.get(row.grade, 0) + 1
 
     return {
@@ -77,23 +74,26 @@ async def grade_distribution(country: str, year: int):
         "distribution": distribution
     }
 
+# 4. Refactorizado a async def
 @router.get("/top-subjects")
-def top_subjects():
+async def top_subjects():
+    query = """
+        SELECT subject, avg_grade
+        FROM subject_averages
+        LIMIT 10
+    """
+    result = await asyncio.to_thread(session.execute, query)
 
-    rows = session.execute("""
-    SELECT subject, avg_grade
-    FROM subject_averages
-    LIMIT 10
-    """)
-
-    return list(rows)
+    # Convertimos explícitamente a dict para evitar errores de serialización JSON de Uvicorn
+    return [{"subject": row.subject, "avg_grade": row.avg_grade} for row in result]
 
 
 @router.get("/student/{student_id}")
 async def student_report(student_id: str):
-
     cache_key = f"report:{student_id}"
-    cached = get_cache(cache_key)
+    
+    # 5. Await agregado para no romper la promesa de la caché
+    cached = await get_cache(cache_key)
 
     if cached:
         return {"source": "cache", "data": cached}
@@ -101,6 +101,7 @@ async def student_report(student_id: str):
     # consulta real (mongo / cassandra)
     data = {"student_id": student_id, "grades": []}
 
-    set_cache(cache_key, data)
+    # 6. Await al escribir en Redis
+    await set_cache(cache_key, data)
 
     return {"source": "db", "data": data}

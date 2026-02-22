@@ -2,12 +2,13 @@ import asyncio
 import aiohttp
 import random
 import time
+import subprocess
 
 # Configuración del estrés
 API_URL = "http://localhost:8000/grades"
 TOTAL_RECORDS = 1_000_000
 BATCH_SIZE = 500        # Mantenemos lotes pequeños para no saturar RAM
-CONCURRENCY_LIMIT = 100 # Reducido a 100 para compensar el doble query en Cassandra
+CONCURRENCY_LIMIT = 20 # Reducido a 100 para compensar el doble query en Cassandra
 
 COUNTRIES = ["AR", "US", "UK", "DE"]
 INSTITUTIONS = {
@@ -85,5 +86,64 @@ async def main():
 
     print(f"✅ Carga masiva completada en {time.time() - start_time:.2f} segundos.")
 
+def print_database_stats():
+    print("\n\n" + "="*60)
+    print("🛑 CARGA DETENIDA. RECOPILANDO MÉTRICAS DE LOS CONTENEDORES...")
+    print("="*60)
+
+    try:
+        # 1. Consultar MongoDB
+        mongo_res = subprocess.run(
+            ["docker", "exec", "edugrade_mongo", "mongosh", "edugrade", "--quiet", "--eval", "db.grades.countDocuments()"],
+            capture_output=True, text=True
+        )
+        print(f"📊 MongoDB (Fuente de Verdad) : {mongo_res.stdout.strip()} documentos.")
+
+        # 2. Consultar Redis
+        redis_res = subprocess.run(
+            ["docker", "exec", "edugrade_redis", "redis-cli", "DBSIZE"],
+            capture_output=True, text=True
+        )
+        # Redis devuelve algo como "(integer) 50", lo limpiamos un poco
+        redis_val = redis_res.stdout.strip().replace("(integer) ", "")
+        print(f"📊 Redis (Caché de Hashes)  : {redis_val} claves activas.")
+
+        # 3. Consultar Neo4j
+        neo4j_res = subprocess.run(
+            ["docker", "exec", "edugrade_neo4j", "cypher-shell", "-u", "neo4j", "-p", "password", "--format", "plain", "MATCH ()-[t:TOOK]->() RETURN count(t);"],
+            capture_output=True, text=True
+        )
+        # cypher-shell en formato plain devuelve el título y luego el número. Tomamos la última línea.
+        neo_lines = [line for line in neo4j_res.stdout.strip().split('\n') if line]
+        neo_val = neo_lines[-1] if neo_lines else "0"
+        print(f"📊 Neo4j (Trayectorias)     : {neo_val} relaciones académicas creadas.")
+
+        # 4. Consultar Cassandra
+        cass_res = subprocess.run(
+            ["docker", "exec", "edugrade_cassandra", "cqlsh", "-e", "SELECT count(*) FROM edugrade.audit_log;"],
+            capture_output=True, text=True
+        )
+        # Cassandra devuelve una tabla en formato texto. Buscamos la línea debajo de los guiones "---"
+        cass_lines = cass_res.stdout.split('\n')
+        cass_val = "Error al leer"
+        for i, line in enumerate(cass_lines):
+            if "---" in line and i + 1 < len(cass_lines):
+                cass_val = cass_lines[i+1].strip()
+                break
+        print(f"📊 Cassandra (Auditoría)    : {cass_val} eventos inmutables registrados.")
+
+    except Exception as e:
+        print(f"❌ Error ejecutando comandos Docker: {e}")
+        print("Asegúrate de que los contenedores estén corriendo.")
+
+    print("="*60 + "\n")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        # Ejecuta la inyección masiva
+        asyncio.run(main())
+        # Si llega a 1,000,000 y termina naturalmente, también muestra las métricas
+        print_database_stats()
+    except KeyboardInterrupt:
+        # Captura el Ctrl+C y muestra el resumen
+        print_database_stats()

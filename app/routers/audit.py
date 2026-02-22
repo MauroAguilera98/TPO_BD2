@@ -4,11 +4,13 @@ from app.audit.audit_service import AuditService
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
+# 1. Agregamos 'async' a la función
 @router.get("/{entity_type}/{entity_id}")
-def get_audit(
+async def get_audit(
     entity_type: str,
     entity_id: str,
-    order: Literal["asc", "desc"] = Query("desc"),   # default: últimos primero
-    limit: int = Query(100, ge=1, le=1000),          # default 100, máx 1000 (ajustable)
+    order: Literal["asc", "desc"] = Query("desc"),
+    limit: int = Query(100, ge=1, le=1000),
 ):
-    return AuditService.history(entity_type, entity_id, order=order, limit=limit)
+    # 2. Agregamos 'await' a la llamada
+    return await AuditService.history(entity_type, entity_id, order=order, limit=limit)

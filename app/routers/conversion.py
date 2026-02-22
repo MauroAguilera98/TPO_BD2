@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.concurrency import run_in_threadpool
 from app.db.redis_client import redis_client
 from app.audit.audit_service import AuditService
 from uuid import uuid4
 
 router = APIRouter(prefix="/conversion", tags=["Conversion"])
+
 
 # --- MAPEOS ESTÁTICOS ---
 UK_MAP = {"A*": 10.0, "A": 9.0, "B": 8.0, "C": 7.0, "D": 6.0, "E": 5.0, "F": 4.0}
@@ -54,7 +54,7 @@ async def convert_grade(grade: str, from_system: str, to_system: str):
     cache_key = f"conv:{from_system}:{to_system}:{grade}".upper()
 
     # 1. Redis
-    cached = await run_in_threadpool(redis_client.get, cache_key)
+    cached = await redis_client.get(cache_key)
 
     if cached:
         return {"converted": cached, "cached": True}
@@ -67,12 +67,12 @@ async def convert_grade(grade: str, from_system: str, to_system: str):
         raise HTTPException(status_code=400, detail=str(e))
 
     # 3. Guardar cache
-    await run_in_threadpool(redis_client.setex, cache_key, 3600, str(result))
-
+    await redis_client.setex(cache_key, 3600, str(result))
+    
     # 4. AUDITORÍA
     conversion_id = str(uuid4())
 
-    AuditService.register_event(
+    await AuditService.register_event(
         entity_type="conversion",
         entity_id=conversion_id,
         action="GRADE_CONVERSION",

@@ -1,17 +1,15 @@
-import redis
 import json
+from app.db.redis_client import redis_client
 
-redis_client = redis.Redis(host="redis", port=6379, decode_responses=True)
+CACHE_TTL = 1800
 
-CACHE_TTL = 60
-
-
-def get_cache(key: str):
-    data = redis_client.get(key)
+async def get_cache(key: str):
+    # Ahora usamos await nativo
+    data = await redis_client.get(key)
     if data:
         return json.loads(data)
     return None
 
-
-def set_cache(key: str, value):
-    redis_client.setex(key, CACHE_TTL, json.dumps(value))
+async def set_cache(key: str, value):
+    # Ahora usamos await nativo
+    await redis_client.setex(key, CACHE_TTL, json.dumps(value))

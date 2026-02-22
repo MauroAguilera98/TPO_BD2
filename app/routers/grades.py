@@ -35,39 +35,48 @@ class Grade(BaseModel):
 # -----------------------------
 # FUNCION ASÍNCRONA PARA NEO4J
 # -----------------------------
-async def async_neo4j_insert(
-    grade: Grade,
-    grade_id: str,
-    hash_value: str,
-    year: int,
-    term: str
-):
-    # Nota de QA: Usamos 'async with' para liberar el hilo mientras esperamos a la BD
+
+# 1. Creamos una función auxiliar que representa la transacción atómica
+async def _create_trajectory_tx(tx, payload: dict):
+    # Nota que aquí usamos 'tx.run' en lugar de 'session.run'
+    await tx.run(
+        """
+        MERGE (s:Student {id: $student_id})
+        MERGE (i:Institution {name: $institution, country: $country})
+        MERGE (sub:Subject {name: $subject})
+
+        MERGE (g:Grade {grade_id: $grade_id})
+        SET g.immutable_hash = coalesce($immutable_hash, g.immutable_hash)
+
+        MERGE (s)-[:STUDIED_AT]->(i)
+        
+        // Relación temporal
+        MERGE (s)-[:TOOK {year: $year, term: $term}]->(sub)
+        
+        MERGE (g)-[:IN_SUBJECT]->(sub)
+        MERGE (g)-[:AT_INSTITUTION]->(i)
+        """, **payload
+    )
+
+# 2. Refactorizamos la función principal para usar 'execute_write'
+async def async_neo4j_insert(grade: Grade, grade_id: str, hash_value: str, year: int, term: str):
+    
+    # Armamos el diccionario de parámetros
+    payload = {
+        "student_id": grade.student_id,
+        "country": grade.country,
+        "institution": grade.institution,
+        "subject": grade.subject,
+        "grade_id": grade_id,
+        "immutable_hash": hash_value,
+        "year": year,
+        "term": term
+    }
+    
     async with driver.session() as session:
-        await session.run(
-            """
-            MERGE (s:Student {id: $student_id})
-            MERGE (i:Institution {name: $institution, country: $country})
-            MERGE (sub:Subject {name: $subject})
-
-            MERGE (g:Grade {grade_id: $grade_id})
-            SET g.immutable_hash = $immutable_hash
-
-            MERGE (s)-[:STUDIED_AT]->(i)
-            MERGE (s)-[:TOOK {year: $year, term: $term}]->(sub)
-
-            MERGE (g)-[:IN_SUBJECT]->(sub)
-            MERGE (g)-[:AT_INSTITUTION]->(i)
-            """,
-            student_id=grade.student_id,
-            institution=grade.institution,
-            country=grade.country,
-            subject=grade.subject,
-            grade_id=grade_id,
-            immutable_hash=hash_value,
-            year=year,
-            term=term
-        )
+        # execute_write ejecutará la función. Si hay Deadlock, 
+        # esperará unos milisegundos y lo reintentará automáticamente.
+        await session.execute_write(_create_trajectory_tx, payload)
 
 
 # -----------------------------
@@ -123,71 +132,60 @@ async def register_grade(grade: Grade):
         trajectory_linked = True
 
     except Exception as e:
-
         print(f"Neo4j error: {e}")
-
-        # registrar fallo en auditoría
-        await run_in_threadpool(
-            AuditService.register_event,
-            "grade",
-            grade_id,
-            "TRAJECTORY_FAILED",
-            "system",
-            {"error": str(e)}
+        # Auditoría 100% Async (Sin threadpool)
+        await AuditService.register_event(
+            entity_type="grade",
+            entity_id=grade_id,
+            action="TRAJECTORY_FAILED",
+            actor="system",
+            payload={"error": str(e)}
         )
 
     # -------------------------------------------------
     # 3) AUDITORIA (APPEND ONLY)
     # -------------------------------------------------
-    await run_in_threadpool(
-        AuditService.register_event,
-        "grade",
-        grade_id,
-        "CREATE_GRADE",
-        "system",
-        {
-            "grade_id": grade_id,
-            "student_id": grade.student_id,
-            "subject": grade.subject,
-            "value": grade.original_grade.value
+    await AuditService.register_event(
+        entity_type="grade",
+        entity_id=grade_id,
+        action="CREATE_GRADE",
+        actor="system",
+        payload={
+            "grade_id": grade_id, "student_id": grade.student_id,
+            "subject": grade.subject, "value": grade.original_grade.value
         }
     )
     
     # -------------------------------------------------
-    # 4) CASSANDRA - VISTA ANALÍTICA (Para reports.py)
+    # 4) CASSANDRA - VISTA ANALÍTICA
     # -------------------------------------------------
-    # Nota de QA: Solo insertamos si el valor es numérico. 
-    # Si es "A*" de UK, habría que usar conversion.py primero.
     try:
         numeric_grade = float(grade.original_grade.value)
+        import asyncio
+        from app.db.cassandra import session
         
-        def sync_cassandra_analytics():
-            from app.db.cassandra import session
-            session.execute("""
-                INSERT INTO grades_by_country_year (country, year, student_id, grade)
-                VALUES (%s, %s, %s, %s)
-            """, (grade.country, year, grade.student_id, numeric_grade))
-            
-        await run_in_threadpool(sync_cassandra_analytics)
+        query = """
+            INSERT INTO edugrade.grades_by_country_year (country, year, student_id, grade)
+            VALUES (%s, %s, %s, %s)
+        """
+        # Delegamos la llamada bloqueante de Cassandra de forma segura
+        await asyncio.to_thread(session.execute, query, (grade.country, year, grade.student_id, numeric_grade))
     except ValueError:
         pass # Ignoramos notas con letras puras para el promedio matemático directo
 
-    await run_in_threadpool(
-    AuditService.register_event,
-    "student",
-    grade.student_id,          # <- entity_id = ID del alumno
-    "GRADE_CREATED",
-    "system",
-    {
-        "grade_id": grade_id,
-        "subject": grade.subject,
-        "value": grade.original_grade.value,
-        "country": grade.country,
-        "institution": grade.institution,
-        "year": int(grade.metadata.get("year", created_at.year)),
-        "term": str(grade.metadata.get("term", "")),
-    }
-)
+    # Última Auditoría (Estudiante actualizado)
+    await AuditService.register_event(
+        entity_type="student",
+        entity_id=grade.student_id,
+        action="GRADE_CREATED",
+        actor="system",
+        payload={
+            "grade_id": grade_id, "subject": grade.subject,
+            "value": grade.original_grade.value, "country": grade.country,
+            "institution": grade.institution, "year": int(grade.metadata.get("year", created_at.year)),
+            "term": str(grade.metadata.get("term", ""))
+        }
+    )
 
     # -------------------------------------------------
     # RESPUESTA
