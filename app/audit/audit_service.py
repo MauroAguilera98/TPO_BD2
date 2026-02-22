@@ -4,15 +4,24 @@ from app.audit.audit_repository import AuditRepository
 from app.audit.hash_chain import generate_hash
 from app.audit.audit_model import AuditEvent
 
+# Importamos los métodos de Redis que tus compañeros ya prepararon
+from app.Services.cache import get_cache, set_cache
+
 
 class AuditService:
 
     @staticmethod
     def register_event(entity_type, entity_id, action, actor, payload):
+        
+        # 1. Armamos la clave única para buscar en Redis
+        cache_key = f"audit_hash:{entity_type}:{entity_id}"
+        
+        # 2. Intentamos obtener el hash desde la memoria RAM (Tarda ~1 ms)
+        previous_hash = get_cache(cache_key)
 
-        previous_hash = None
-
-        previous_hash = AuditRepository.get_last_hash(entity_type, entity_id)
+        # 3. CACHE MISS: Solo si Redis NO lo tiene, vamos a sufrir la latencia de Cassandra
+        if previous_hash is None:
+            previous_hash = AuditRepository.get_last_hash(entity_type, entity_id)
 
         event_data = {
             "entity_type": entity_type,
@@ -23,6 +32,7 @@ class AuditService:
             "timestamp": datetime.utcnow().isoformat()
         }
 
+        # 4. Generamos la nueva firma criptográfica
         hash_value = generate_hash(event_data, previous_hash)
 
         event = AuditEvent(
@@ -36,7 +46,11 @@ class AuditService:
             hash=hash_value
         )
 
+        # 5. Guardamos el evento inmutable en Cassandra
         AuditRepository.save_event(event)
+        
+        # 6. CACHE UPDATE: Actualizamos Redis con el hash NUEVO para la próxima petición
+        set_cache(cache_key, hash_value)
 
         return event
 
@@ -59,7 +73,7 @@ class AuditService:
                 "timestamp": e.timestamp.isoformat() if e.timestamp else None,
                 "action": e.action,
                 "actor": e.actor,
-                "payload": payload,              # ✅ acá usás el payload ya parseado
+                "payload": payload,              
                 "previous_hash": e.previous_hash,
                 "hash": e.hash,
             })

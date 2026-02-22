@@ -28,18 +28,20 @@ def generate_random_grade(country: str) -> dict:
     else: # DE
         return {"scale": "1-6 (Inversa)", "value": round(random.uniform(1.0, 4.0), 1)}
 
+# En lugar de 1 millón de posibilidades, usamos solo 50 alumnos fijos
 def create_payload():
-    """Genera un JSON perfectamente alineado con el nuevo modelo de la API."""
     country = random.choice(COUNTRIES)
+    # Al usar un rango de solo 1 a 50, Redis se va a llenar rápido y empezará a "volar"
+    student_id = f"STU-{random.randint(1, 50)}" 
+    
     return {
-        "student_id": f"STU-{random.randint(10000, 999999)}",
-        # grade_id eliminado: ahora lo genera el backend
+        "student_id": student_id,
         "country": country,
         "institution": random.choice(INSTITUTIONS[country]),
         "subject": random.choice(SUBJECTS),
         "original_grade": generate_random_grade(country),
         "metadata": {
-            "year": random.choice([2023, 2024, 2025, 2026]), # Movido aquí adentro
+            "year": random.choice([2023, 2024, 2025, 2026]),
             "term": random.choice(["S1", "S2"]),
             "eval_type": random.choice(["Final", "Parcial", "Coursework"])
         }
