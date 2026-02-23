@@ -1,109 +1,151 @@
-from fastapi import APIRouter
+from __future__ import annotations
+
 import asyncio
+from fastapi import APIRouter, Query
+from typing import Dict, Any, Optional, List
+
 from app.db.cassandra import session
-from app.services.cache import get_cache, set_cache
+from app.db.mongo import subjects_collection
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
-# 1. Promedio delegando el cálculo matemático a Cassandra
+SUM_SCALE = 1000.0
+
+
+def _avg(sum_milli: int, count_grade: int) -> Optional[float]:
+    if not count_grade:
+        return None
+    return round((sum_milli / SUM_SCALE) / count_grade, 2)
+
+
 @router.get("/average/{country}/{year}")
-async def get_country_average(country: str, year: int):
-    # Cassandra suma y cuenta nativamente en C++, devolviendo solo 1 fila a Python
+async def avg_country_year(country: str, year: int):
     query = """
-        SELECT AVG(grade) as avg_grade, COUNT(grade) as total 
-        FROM grades_by_country_year 
-        WHERE country=%s AND year=%s
+    SELECT sum_milli, count_grade
+    FROM stats_by_dim_year
+    WHERE dim=%s AND dim_id=%s AND year=%s
     """
-    # Delegamos al hilo nativo de asyncio
-    result = await asyncio.to_thread(session.execute, query, (country, year))
-    row = result.one()
+    rs = await asyncio.to_thread(session.execute, query, ("country", country.upper(), year))
+    row = rs.one()
+    if not row:
+        return {"country": country.upper(), "year": year, "average": None, "total_records": 0}
 
-    if not row or row.total == 0:
-        return {"country": country, "year": year, "average": None}
-
+    avg = _avg(int(row.sum_milli or 0), int(row.count_grade or 0))
     return {
-        "country": country,
+        "country": country.upper(),
         "year": year,
-        "average": round(row.avg_grade, 2),
-        "total_records": row.total
+        "average": avg,
+        "total_records": int(row.count_grade or 0),
     }
 
-# 2. Top 10 agrupando nativamente
+
+@router.get("/average-institution/{institution_id}/{year}")
+async def avg_institution_year(institution_id: str, year: int):
+    query = """
+    SELECT sum_milli, count_grade
+    FROM stats_by_dim_year
+    WHERE dim=%s AND dim_id=%s AND year=%s
+    """
+    rs = await asyncio.to_thread(session.execute, query, ("institution", institution_id, year))
+    row = rs.one()
+    if not row:
+        return {"institution_id": institution_id, "year": year, "average": None, "total_records": 0}
+
+    avg = _avg(int(row.sum_milli or 0), int(row.count_grade or 0))
+    return {
+        "institution_id": institution_id,
+        "year": year,
+        "average": avg,
+        "total_records": int(row.count_grade or 0),
+    }
+
+
 @router.get("/top10/{country}/{year}")
-async def top_10_students(country: str, year: int):
-    # Agrupamos por student_id dentro de la partición. 
-    # Python recibe una fracción mínima de los datos.
+async def top10_students(country: str, year: int):
     query = """
-        SELECT student_id, AVG(grade) as student_avg 
-        FROM grades_by_country_year 
-        WHERE country=%s AND year=%s 
-        GROUP BY student_id
+    SELECT student_id, sum_milli, count_grade
+    FROM student_stats_by_country_year
+    WHERE country=%s AND year=%s
     """
-    result = await asyncio.to_thread(session.execute, query, (country, year))
-    rows = list(result)
+    rs = await asyncio.to_thread(session.execute, query, (country.upper(), year))
 
-    # Cassandra no ordena por agregaciones, ordenamos en Python
-    top10 = sorted(rows, key=lambda x: x.student_avg, reverse=True)[:10]
+    rows = []
+    for r in rs:
+        cnt = int(r.count_grade or 0)
+        sm = int(r.sum_milli or 0)
+        avg = _avg(sm, cnt)
+        if avg is None:
+            continue
+        rows.append({"student_id": r.student_id, "average": avg, "count": cnt})
 
-    return {
-        "country": country,
-        "year": year,
-        "top10": [
-            {"student_id": row.student_id, "average": round(row.student_avg, 2)}
-            for row in top10
-        ]
-    }
+    rows.sort(key=lambda x: x["average"], reverse=True)
+    return {"country": country.upper(), "year": year, "top10": rows[:10]}
 
-# 3. Distribución (Requiere iteración porque 'grade' no es clave de clustering)
+
 @router.get("/distribution/{country}/{year}")
 async def grade_distribution(country: str, year: int):
     query = """
-        SELECT grade 
-        FROM grades_by_country_year 
-        WHERE country=%s AND year=%s
+    SELECT bucket, count
+    FROM grade_hist_by_country_year
+    WHERE country=%s AND year=%s
     """
-    result = await asyncio.to_thread(session.execute, query, (country, year))
+    rs = await asyncio.to_thread(session.execute, query, (country.upper(), year))
 
-    distribution = {}
-    for row in result:
-        distribution[row.grade] = distribution.get(row.grade, 0) + 1
+    dist: Dict[str, int] = {}
+    for r in rs:
+        dist[str(r.bucket)] = int(r.count or 0)
 
-    return {
-        "country": country,
-        "year": year,
-        "distribution": distribution
-    }
+    return {"country": country.upper(), "year": year, "distribution": dist}
 
-# 4. Refactorizado a async def
+
 @router.get("/top-subjects")
-async def top_subjects():
-    query = """
-    SELECT subject, avg_grade
-    FROM subject_averages
-    LIMIT 10
-    """
-    result = await asyncio.to_thread(session.execute, query)
+async def top_subjects(
+    limit: int = Query(10, ge=1, le=100),
+    country: Optional[str] = Query(default=None),
+    year: Optional[int] = Query(default=None),
+    with_names: bool = Query(default=True, description="Si true, intenta traer nombres desde Mongo para los top N"),
+):
+    if country is not None and year is not None:
+        query = """
+        SELECT subject_id, sum_milli, count_grade
+        FROM subject_stats_by_country_year
+        WHERE country=%s AND year=%s
+        """
+        rs = await asyncio.to_thread(session.execute, query, (country.upper(), int(year)))
+    else:
+        # Global
+        query = """
+        SELECT subject_id, sum_milli, count_grade
+        FROM subject_stats_global
+        WHERE k=%s
+        """
+        rs = await asyncio.to_thread(session.execute, query, ("ALL",))
 
-    return [
-        {"subject": row.subject, "avg_grade": row.avg_grade}
-        for row in result
-    ]
+    rows = []
+    for r in rs:
+        cnt = int(r.count_grade or 0)
+        sm = int(r.sum_milli or 0)
+        avg = _avg(sm, cnt)
+        if avg is None:
+            continue
+        rows.append({"subject_id": r.subject_id, "average": avg, "count": cnt})
 
+    rows.sort(key=lambda x: x["average"], reverse=True)
+    top = rows[:limit]
 
-@router.get("/student/{student_id}")
-async def student_report(student_id: str):
-    cache_key = f"report:{student_id}"
-    
-    # 5. Await agregado para no romper la promesa de la caché
-    cached = await get_cache(cache_key)
+    if with_names and top:
+        # Lookup liviano en Mongo (solo top N)
+        ids = [x["subject_id"] for x in top]
+        cursor = subjects_collection.find({"_id": {"$in": ids}}, {"_id": 1, "name": 1})
+        docs = await cursor.to_list(length=len(ids))
+        name_map = {d["_id"]: d.get("name") for d in docs}
+        for x in top:
+            x["name"] = name_map.get(x["subject_id"])
 
-    if cached:
-        return {"source": "cache", "data": cached}
-
-    # consulta real (mongo / cassandra)
-    data = {"student_id": student_id, "grades": []}
-
-    # 6. Await al escribir en Redis
-    await set_cache(cache_key, data)
-
-    return {"source": "db", "data": data}
+    out: Dict[str, Any] = {"limit": limit, "top": top}
+    if country is not None and year is not None:
+        out["country"] = country.upper()
+        out["year"] = int(year)
+    else:
+        out["scope"] = "global"
+    return out

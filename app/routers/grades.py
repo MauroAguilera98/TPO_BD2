@@ -1,27 +1,18 @@
 from fastapi import APIRouter
-import asyncio
 
-from app.db.mongo import grades_collection, institutions_collection, subjects_collection
 from app.db.neo4j import driver
 from app.audit.audit_service import AuditService
 from app.grade.grade_model import GradeCreate
 from app.grade.grade_service import GradeService
-from app.db.cassandra import session as cass_session
-
+from app.reporting.aggregator import ReportsAggregator
 
 router = APIRouter()
-
-
-# -----------------------------
-# MODELOS
-# -----------------------------
 
 
 # -----------------------------
 # FUNCION ASÍNCRONA PARA NEO4J
 # -----------------------------
 
-# 1. Creamos una función auxiliar que representa la transacción atómica
 async def _create_trajectory_tx(tx, payload: dict):
     await tx.run(
         """
@@ -41,10 +32,10 @@ async def _create_trajectory_tx(tx, payload: dict):
         MERGE (g)-[:IN_SUBJECT]->(sub)
         MERGE (g)-[:AT_INSTITUTION]->(i)
         """,
-        **payload
+        **payload,
     )
 
-# 2. Refactorizamos la función principal para usar 'execute_write'
+
 async def async_neo4j_insert(doc: dict, year: int, term: str):
     payload = {
         "student_id": doc["student_id"],
@@ -52,7 +43,7 @@ async def async_neo4j_insert(doc: dict, year: int, term: str):
         "institution_id": doc["institution_id"],
         "subject_id": doc["subject_id"],
         "grade_id": doc["grade_id"],
-        "immutable_hash": doc["immutable_hash"],
+        "immutable_hash": doc.get("immutable_hash"),
         "year": year,
         "term": term,
     }
@@ -81,30 +72,22 @@ async def register_grade(body: GradeCreate):
         trajectory_linked = True
 
     except Exception as e:
-        await AuditService.register_event(
-            entity_type="grade",
-            entity_id=grade_id,
-            action="TRAJECTORY_FAILED",
-            actor="system",
-            payload={"error": str(e)},
-        )
+        # Best-effort: no debe romper el POST si cae Cassandra (audit usa Cassandra)
+        try:
+            await AuditService.register_event(
+                entity_type="grade",
+                entity_id=grade_id,
+                action="TRAJECTORY_FAILED",
+                actor="system",
+                payload={"error": str(e)},
+            )
+        except Exception:
+            pass
 
-    # Cassandra (best-effort)
+    # Cassandra RF4 (best-effort)
+    # Nota: el aggregator ya es best-effort, pero igual lo dejamos envuelto por seguridad.
     try:
-        numeric_grade = float(created["original_grade"]["value"])
-        issued_at = created["issued_at"]
-        meta = created.get("metadata", {}) or {}
-        year = int(meta.get("year", issued_at.year))
-
-        query = """
-            INSERT INTO edugrade.grades_by_country_year (country, year, student_id, grade)
-            VALUES (%s, %s, %s, %s)
-        """
-        await asyncio.to_thread(
-            cass_session.execute,
-            query,
-            (created["country"], year, created["student_id"], numeric_grade),
-        )
+        await ReportsAggregator.on_grade_created(created)
     except Exception:
         pass
 
