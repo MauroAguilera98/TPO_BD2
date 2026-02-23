@@ -23,13 +23,14 @@ async def lifespan(app: FastAPI):
     # ==========================================
     print("🚀 Iniciando sistema EduGrade Global...")
     
-    # Ejecutamos las inicializaciones asíncronas
-    await init_neo4j_schema()
-    await init_cassandra_schema()
-    await init_mongo_indices()
-    
-    print("✅ Todas las infraestructuras NoSQL están listas.")
-    
+    try:
+        # Ejecutamos las inicializaciones asíncronas
+        await init_neo4j_schema()      # Crea los UNIQUE constraints
+        await init_cassandra_schema()  # Crea keyspace y tablas de auditoría
+        await init_mongo_indices()     # Asegura índices de búsqueda en Mongo
+        print("✅ Todos los motores NoSQL están listos.")
+    except Exception as e:
+        print(f"❌ Error crítico durante el encendido: {e}")
     # ==========================================
     # YIELD: La API está viva y recibe tráfico
     # ==========================================
