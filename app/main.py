@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 
 # Importamos los routers
-from app.routers import grades, trajectory, reports, conversion, audit, students
+from app.routers import grades, trajectory, reports, conversion, audit, students, institutions, subjects, equivalences
 
 # 1. Importaciones MONGO
 from app.db.mongo import init_mongo_indices, close_mongo, client as mongo_client
@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
     close_mongo()
     
     # Cassandra (Llamada según la opción que elegiste en el paso anterior)
-    close_cassandra() # (O 'await close_cassandra()' si usaste asyncio.to_thread)
+    await close_cassandra() # (O 'await close_cassandra()' si usaste asyncio.to_thread)
     
     print("✅ Conexiones cerradas limpiamente!")
 
@@ -62,3 +62,6 @@ app.include_router(reports.router)
 app.include_router(conversion.router)
 app.include_router(audit.router)
 app.include_router(students.router)
+app.include_router(institutions.router)
+app.include_router(subjects.router)
+app.include_router(equivalences.router)

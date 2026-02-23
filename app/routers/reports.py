@@ -78,14 +78,16 @@ async def grade_distribution(country: str, year: int):
 @router.get("/top-subjects")
 async def top_subjects():
     query = """
-        SELECT subject, avg_grade
-        FROM subject_averages
-        LIMIT 10
+    SELECT subject, avg_grade
+    FROM subject_averages
+    LIMIT 10
     """
     result = await asyncio.to_thread(session.execute, query)
 
-    # Convertimos explícitamente a dict para evitar errores de serialización JSON de Uvicorn
-    return [{"subject": row.subject, "avg_grade": row.avg_grade} for row in result]
+    return [
+        {"subject": row.subject, "avg_grade": row.avg_grade}
+        for row in result
+    ]
 
 
 @router.get("/student/{student_id}")
