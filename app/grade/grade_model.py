@@ -46,3 +46,11 @@ class GradeOut(BaseModel):
     issued_at: datetime
     created_at: datetime
     immutable_hash: str
+
+class GradeCorrectionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    original_grade: OriginalGrade
+    issued_at: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    reason: Optional[str] = Field(default=None, max_length=200)

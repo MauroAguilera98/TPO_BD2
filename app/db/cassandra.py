@@ -41,7 +41,68 @@ async def init_cassandra_schema():
                 subject text PRIMARY KEY,
                 avg_grade float
             );
-        """ 
+        """ ,
+            #1) Idempotencia (evitar doble conteo si reintenta)
+        """CREATE TABLE IF NOT EXISTS edugrade.grade_ledger_by_id (
+            grade_id text PRIMARY KEY,
+            country text,
+            year int,
+            student_id text,
+            institution_id text,
+            subject_id text,
+            grade double,
+            created_at timestamp
+        );""",
+
+        #2) Promedios por dimensión y año (country/year e institution/year con el mismo diseño)
+        # dim: 'country' | 'institution'
+        # dim_id: 'AR' o 'INS-AR-0001'
+        """CREATE TABLE IF NOT EXISTS edugrade.stats_by_dim_year (
+            dim text,
+            dim_id text,
+            year int,
+            sum_milli counter,
+            count_grade counter,
+            PRIMARY KEY ((dim, dim_id, year))
+        );""",
+
+        # 3) Top estudiantes por país y año (promedio = sum/count)
+        """CREATE TABLE IF NOT EXISTS edugrade.student_stats_by_country_year (
+            country text,
+            year int,
+            student_id text,
+            sum_milli counter,
+            count_grade counter,
+            PRIMARY KEY ((country, year), student_id)
+        );""",
+
+        # 4) Top materias por país y año
+        """CREATE TABLE IF NOT EXISTS edugrade.subject_stats_by_country_year (
+            country text,
+            year int,
+            subject_id text,
+            sum_milli counter,
+            count_grade counter,
+            PRIMARY KEY ((country, year), subject_id)
+        );""",
+
+        # 5) Top materias global
+        """CREATE TABLE IF NOT EXISTS edugrade.subject_stats_global (
+            k text,                -- siempre 'ALL'
+            subject_id text,
+            sum_milli counter,
+            count_grade counter,
+            PRIMARY KEY (k, subject_id)
+        );""",
+
+        # 6) Distribución/histograma simple por país y año (bucket 0..10)
+        """CREATE TABLE IF NOT EXISTS edugrade.grade_hist_by_country_year (
+            country text,
+            year int,
+            bucket int,
+            count counter,
+            PRIMARY KEY ((country, year), bucket)
+        );""",
     ]
     
     # Aseguramos el keyspace primero
