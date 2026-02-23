@@ -82,10 +82,10 @@ class StudentService:
         await AuditService.register_event(
             entity_type="student",
             entity_id=student_id,
-            action="CREATE", # (o UPDATE, DELETE, según corresponda en cada método)
+            action="CREATE",
             actor=actor,
-            payload={"snapshot": _serialize(doc)}
-        )
+            payload={"snapshot": _serialize(doc)},
+)
 
         return _mongo_to_api_student(doc)
 
@@ -111,13 +111,15 @@ class StudentService:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
         await AuditService.register_event(
-            AuditService.register_event,
-            "student",
-            student_id,
-            "UPDATE",
-            actor,
-            {"changes": _serialize(safe_changes), "snapshot": _serialize(updated)},
-        )
+            entity_type="student",
+            entity_id=student_id,
+            action="UPDATE",
+            actor=actor,
+            payload={
+                "changes": _serialize(safe_changes),
+                "snapshot": _serialize(updated),
+    },
+)
 
         return _mongo_to_api_student(updated)
 
@@ -139,12 +141,11 @@ class StudentService:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
         await AuditService.register_event(
-            AuditService.register_event,
-            "student",
-            student_id,
-            "TRAJECTORY_ADD",
-            actor,
-            {"trajectory": _serialize(trajectory_out)},
+            entity_type="student",
+            entity_id=student_id,
+            action="TRAJECTORY_ADD",
+            actor=actor,
+            payload={"trajectory": _serialize(trajectory_out)},
         )
 
         return _mongo_to_api_student(updated)
@@ -160,12 +161,11 @@ class StudentService:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
         await AuditService.register_event(
-            AuditService.register_event,
-            "student",
-            student_id,
-            "DELETE",
-            actor,
-            {"snapshot": _serialize(deleted)},
+            entity_type="student",
+            entity_id=student_id,
+            action="DELETE",
+            actor=actor,
+            payload={"snapshot": _serialize(deleted)},
         )
 
         return _mongo_to_api_student(deleted)
@@ -190,12 +190,11 @@ class StudentService:
             raise HTTPException(status_code=404, detail="student no encontrado o inactivo")
 
         await AuditService.register_event(
-            AuditService.register_event,
-            "student",
-            student_id,
-            "TRAJECTORY_PLAN_UPDATED",
-            actor,
-            {
+            entity_type="student",
+            entity_id=student_id,
+            action="TRAJECTORY_PLAN_UPDATED",
+            actor=actor,
+            payload={
                 "trajectory_id": trajectory_id,
                 "old_expected_end_year": old_val,
                 "new_expected_end_year": expected_end_year,

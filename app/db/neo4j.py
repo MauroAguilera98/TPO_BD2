@@ -14,7 +14,9 @@ async def init_neo4j_schema():
         "CREATE CONSTRAINT IF NOT EXISTS FOR (s:Student) REQUIRE s.id IS UNIQUE;",
         "CREATE CONSTRAINT IF NOT EXISTS FOR (g:Grade) REQUIRE g.grade_id IS UNIQUE;",
         "CREATE INDEX IF NOT EXISTS FOR (i:Institution) ON (i.name);",
-        "CREATE INDEX IF NOT EXISTS FOR (sub:Subject) ON (sub.name);"
+        "CREATE INDEX IF NOT EXISTS FOR (sub:Subject) ON (sub.name);",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (sub:Subject) REQUIRE sub.id IS UNIQUE;",
+        "CREATE CONSTRAINT IF NOT EXISTS FOR (i:Institution) REQUIRE i.id IS UNIQUE;",
     ]
     
     # Abrimos una sesión y ejecutamos cada query de forma asíncrona
@@ -31,3 +33,5 @@ async def init_neo4j_schema():
         """Cierra el pool de conexiones asíncronas de Neo4j de forma segura."""
     await driver.close()
     print("🔌 Conexión a Neo4j cerrada correctamente.")
+
+    

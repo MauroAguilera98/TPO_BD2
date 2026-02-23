@@ -8,11 +8,19 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client["edugrade"]
 grades_collection = db["grades"]
 students_collection = db["students"]
+institutions_collection = db["institutions"]
+subjects_collection = db["subjects"]
 
 async def init_mongo_indices():
     # Garantiza búsquedas O(1) para el millón de registros
     await grades_collection.create_index("grade_id", unique=True)
-    await students_collection.create_index("student_id", unique=True)
+    await institutions_collection.create_index("country")
+    await institutions_collection.create_index("is_active")
+    await institutions_collection.create_index("name")
+    await subjects_collection.create_index("institution_id")
+    await subjects_collection.create_index("kind")
+    await subjects_collection.create_index("is_active")
+    await subjects_collection.create_index([("institution_id", 1), ("name", 1)])
     print("✅ Índices de MongoDB verificados/creados.")
 
 # La creación de índices en Motor es asíncrona, debe hacerse en el arranque de la app,
