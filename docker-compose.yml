@@ -1,14 +1,18 @@
+
+
 services:
   mongo:
     image: mongo:7
     container_name: edugrade_mongo
     ports:
       - "27017:27017"
-    environment:
-    - MONGO_URI=mongodb://mongo:27017
-
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   neo4j:
     image: neo4j:5
@@ -20,20 +24,38 @@ services:
       - NEO4J_AUTH=neo4j/password
     volumes:
       - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "http://localhost:7474", "-O", "-"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
 
   cassandra:
     image: cassandra:4
     container_name: edugrade_cassandra
     ports:
       - "9042:9042"
+    environment:
+      # Límite estricto de memoria para evitar colapsos en desarrollo
+      - JVM_OPTS=-Xms512M -Xmx512M
     volumes:
       - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
 
   redis:
     image: redis:7
     container_name: edugrade_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build: .
@@ -41,10 +63,19 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - mongo
-      - neo4j
-      - cassandra
-      - redis
+      mongo:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - MONGO_HOST=mongo
+      - CASSANDRA_HOST=cassandra
+      - REDIS_HOST=redis
+      - NEO4J_HOST=neo4j
     restart: always
 
 volumes:
