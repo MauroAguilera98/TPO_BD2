@@ -1,0 +1,1 @@
+{"sent": 10500, "total": 1000000, "ok_total": 10500, "fail_total": 0, "batch": 500, "concurrency": 100, "retries": 2, "uk_ratio": 0.0, "elapsed_seconds": 92.87330440001097, "avg_req_s": 113.05724575897355, "timestamp_utc": "2026-02-23T08:59:42.434810+00:00"}
