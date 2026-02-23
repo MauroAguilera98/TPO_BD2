@@ -59,6 +59,21 @@ async def avg_institution_year(institution_id: str, year: int):
         "total_records": int(row.count_grade or 0),
     }
 
+@router.get("/average-system/{system}/{year}")
+async def avg_system_year(system: str, year: int):
+    query = """
+    SELECT sum_milli, count_grade
+    FROM stats_by_dim_year
+    WHERE dim=%s AND dim_id=%s AND year=%s
+    """
+    rs = await asyncio.to_thread(session.execute, query, ("system", system.upper(), year))
+    row = rs.one()
+    if not row:
+        return {"system": system.upper(), "year": year, "average": None, "total_records": 0}
+
+    avg = _avg(int(row.sum_milli or 0), int(row.count_grade or 0))
+    return {"system": system.upper(), "year": year, "average": avg, "total_records": int(row.count_grade or 0)}
+
 
 @router.get("/top10/{country}/{year}")
 async def top10_students(country: str, year: int):

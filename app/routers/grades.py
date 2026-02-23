@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 
 from app.db.neo4j import driver
 from app.audit.audit_service import AuditService
-from app.grade.grade_model import GradeCreate
+from app.grade.grade_model import GradeCorrectionCreate, GradeCreate, GradeCorrectionCreate
+from app.grade.grade_repository import GradeRepository
 from app.grade.grade_service import GradeService
 from app.reporting.aggregator import ReportsAggregator
 
@@ -102,3 +103,38 @@ async def register_grade(body: GradeCreate):
 @router.get("/grades/{grade_id}")
 async def get_grade(grade_id: str):
     return await GradeService.get(grade_id)
+
+@router.get("/grades/by-student/{student_id}")
+async def list_grades_by_student(
+    student_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    skip: int = Query(0, ge=0),
+):
+    return await GradeService.list_by_student(student_id, limit=limit, skip=skip)
+
+
+@router.post("/grades/{grade_id}/corrections")
+async def correct_grade(grade_id: str, body: GradeCorrectionCreate):
+    old_raw = await GradeRepository.get(grade_id)
+    if not old_raw:
+        raise HTTPException(status_code=404, detail="grade no encontrada")
+
+    new_doc = await GradeService.correct(grade_id, body.model_dump(), actor="system")
+
+    # Neo4j best-effort
+    try:
+        issued_at = new_doc["issued_at"]
+        meta = new_doc.get("metadata", {}) or {}
+        year = int(meta.get("year", issued_at.year))
+        term = str(meta.get("term", ""))
+        await async_neo4j_insert(new_doc, year, term)
+    except Exception:
+        pass
+
+    # RF4 coherente
+    try:
+        await ReportsAggregator.on_grade_corrected(old_raw, new_doc)
+    except Exception:
+        pass
+
+    return {"status": "OK", "new_grade_id": new_doc["grade_id"], "correction_of": grade_id}

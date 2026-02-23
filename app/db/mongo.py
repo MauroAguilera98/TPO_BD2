@@ -13,7 +13,8 @@ subjects_collection = db["subjects"]
 
 async def init_mongo_indices():
     # Garantiza búsquedas O(1) para el millón de registros
-    await grades_collection.create_index("grade_id", unique=True)
+    await grades_collection.create_index([("student_id", 1), ("issued_at", -1)])
+    await grades_collection.create_index("correction_of")
     await institutions_collection.create_index("country")
     await institutions_collection.create_index("is_active")
     await institutions_collection.create_index("name")
